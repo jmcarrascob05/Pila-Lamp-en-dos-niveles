@@ -1,2 +1,260 @@
-# Pila-Lamp-en-dos-niveles
-Esta es la tarea de la pila LAMP en dos niveles creada por Juan Manuel Carrasco Benítez
+# Despliegue de infraestructura LAMP en dos niveles por Juan Manuel Carrasco Benítez
+
+## 1. Crear y clonar el repositorio en GitHub
+
+Creamos el repositorio en GitHub y lo clonamos en el directorio de trabajo:
+
+---
+
+## 2. Inicializar proyecto Vagrant y definir las máquinas
+
+Inicializamos Vagrant (solo la primera vez):
+
+
+Modificamos el archivo `Vagrantfile` para definir dos máquinas virtuales: una para Apache/PHP (web) y otra para MariaDB (bd). Especifica nombre, red privada, aprovisionamiento y puertos.
+
+     # -*- mode: ruby -*-
+    # vi: set ft=ruby :
+    
+    # All Vagrant configuration is done below. The "2" in Vagrant.configure
+    # configures the configuration version (we support older styles for
+    # backwards compatibility). Please don't change it unless you know what
+    # you're doing.
+    Vagrant.configure("2") do |config|
+      # The most common configuration options are documented and commented below.
+      # For a complete reference, please see the online documentation at
+      # https://docs.vagrantup.com.
+    
+      # Every Vagrant development environment requires a box. You can search for
+      # boxes at https://vagrantcloud.com/search.
+    
+    config.vm.define :web do |web|
+      web.vm.box = "debian/bookworm64"
+      web.vm.hostname = "JuanManuelCarrApache"
+
+      # Red privada y redirección de puerto
+      web.vm.network "private_network", ip: "192.168.30.10"
+      web.vm.network "forwarded_port", guest: 80, host: 8080
+
+      web.vm.provision "shell", inline: <<-SHELL
+      # Actualizamos los repositorios e instalamos apache php y github
+      apt-get update
+      apt-get install -y apache2 php libapache2-mod-php php-mysql git
+
+      # Clonamos el repositorio de github
+      git clone https://github.com/josejuansanchez/iaw-practica-lamp.git /var/www/html/iaw-practica-lamp
+
+      # Gestionamos los permisos necesarios
+      sudo chown -R www-data:www-data /var/www/html/iaw-practica-lamp
+
+      # Configuramos apache 
+      sudo cp /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/usuariosapp.conf
+
+      sudo sed -i 's/DocumentRoot .*/DocumentRoot \\\/var\\\/www\\\/html\\\/iaw-practica-lamp\\\/src/' /etc/apache2/sites-available/usuariosapp.conf
+      # Habilitamos modwrite y el site de la app
+      
+      a2enmod rewrite
+      a2ensite usuariosapp.conf
+      a2dissite 000-default.conf
+
+      # Reiniciamos apache
+      sudo systemctl restart apache2
+
+      # Configuramos config.php
+      sudo sed -i "s|'localhost'|'192.168.30.11'|g; s|'database_name_here'|'iawdb'|g; s|'username_here'|'iawuser'|g; s|'password_here'|'iawpass'|g" /var/www/html/iaw-practica-lamp/src/config.php
+      SHELL
+    end
+
+    config.vm.define :db do |db|
+      db.vm.box = "debian/bookworm64"
+      db.vm.hostname = "JuanManuelCarrMariadb"
+      db.vm.network "private_network", ip: "192.168.30.11"
+      db.vm.provision "shell", inline: <<-SHELL
+      
+      # Actualizamos los repositorios e intalamos mariadb y github
+      apt-get update
+      apt-get upgrade -y
+      apt-get install -y mariadb-server git
+      
+      # Clonamos el repositorio de git
+      git clone https://github.com/josejuansanchez/iaw-practica-lamp.git
+      sudo sed -i "s|bind-address\s*=.*|bind-address = 0.0.0.0|g" /etc/mysql/mariadb.conf.d/50-server.cnf
+      
+      # Reiniciamos mariadb
+      sudo systemctl restart mariadb
+      
+      # Creamos la base de datos y usuarios
+      mysql -u root -e"
+      CREATE DATABASE IF NOT EXISTS iawdb;
+      CREATE USER IF NOT EXISTS 'iawuser'@'192.168.30.%' IDENTIFIED BY 'iawpass';
+      GRANT SELECT, INSERT, DELETE, UPDATE ON iawdb.* TO 'iawuser'@'192.168.30.%';
+      FLUSH PRIVILEGES;
+      "
+      
+      # Provisionamos la base de datos
+      mysql -u root iawdb < iaw-practica-lamp/db/database.sql
+      
+      # Deshabilitamos la puerta de enlace para que el equipo no tenga salida a internet
+      sudo ip route del default
+      SHELL
+    end
+    # Disable automatic box update checking. If you disable this, then
+    # boxes will only be checked for updates when the user runs
+    # `vagrant box outdated`. This is not recommended.
+    # config.vm.box_check_update = false
+  
+    # Create a forwarded port mapping which allows access to a specific port
+    # within the machine from a port on the host machine. In the example below,
+    # accessing "localhost:8080" will access port 80 on the guest machine.
+    # NOTE: This will enable public access to the opened port
+    # config.vm.network "forwarded_port", guest: 80, host: 8080
+  
+    # Create a forwarded port mapping which allows access to a specific port
+    # within the machine from a port on the host machine and only allow access
+    # via 127.0.0.1 to disable public access
+    # config.vm.network "forwarded_port", guest: 80, host: 8080, host_ip: "127.0.0.1"
+  
+    # Create a private network, which allows host-only access to the machine
+    # using a specific IP.
+    # config.vm.network "private_network", ip: "192.168.33.10"
+  
+    # Create a public network, which generally matched to bridged network.
+    # Bridged networks make the machine appear as another physical device on
+    # your network.
+    # config.vm.network "public_network"
+  
+    # Share an additional folder to the guest VM. The first argument is
+    # the path on the host to the actual folder. The second argument is
+    # the path on the guest to mount the folder. And the optional third
+    # argument is a set of non-required options.
+    # config.vm.synced_folder "../data", "/vagrant_data"
+  
+    # Disable the default share of the current code directory. Doing this
+    # provides improved isolation between the vagrant box and your host
+    # by making sure your Vagrantfile isn't accessible to the vagrant box.
+    # If you use this you may want to enable additional shared subfolders as
+    # shown above.
+    # config.vm.synced_folder ".", "/vagrant", disabled: true
+  
+    # Provider-specific configuration so you can fine-tune various
+    # backing providers for Vagrant. These expose provider-specific options.
+    # Example for VirtualBox:
+    #
+    # config.vm.provider "virtualbox" do |vb|
+    #   # Display the VirtualBox GUI when booting the machine
+    #   vb.gui = true
+    #
+    #   # Customize the amount of memory on the VM:
+    #   vb.memory = "1024"
+    # end
+    #
+    # View the documentation for the provider you are using for more
+    # information on available options.
+  
+    # Enable provisioning with a shell script. Additional provisioners such as
+    # Ansible, Chef, Docker, Puppet and Salt are also available. Please see the
+    # documentation for more information about their specific syntax and use.
+    # config.vm.provision "shell", inline: <<-SHELL
+    #   apt-get update
+    #   apt-get install -y apache2
+    # SHELL
+    end
+---
+
+## 3. Crear los scripts de aprovisionamiento y darles permisos
+
+Creamos una carpeta para los scripts y los escribimos dentro:
+
+
+### aprov/provision_apache.sh
+
+      #!/bin/bash
+      # Actualizamos los repositorios e instalamos apache php y github
+      apt-get update
+      apt-get install -y apache2 php libapache2-mod-php php-mysql git
+
+      # Clonamos el repositorio de github
+      git clone https://github.com/josejuansanchez/iaw-practica-lamp.git /var/www/html/iaw-practica-lamp
+
+      # Gestionamos los permisos necesarios
+      sudo chown -R www-data:www-data /var/www/html/iaw-practica-lamp
+
+      # Configuramos apache 
+      sudo cp /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/usuariosapp.conf
+
+      sudo sed -i 's/DocumentRoot .*/DocumentRoot \\\/var\\\/www\\\/html\\\/iaw-practica-lamp\\\/src/' /etc/apache2/sites-available/usuariosapp.conf
+      # Habilitamos modwrite y el site de la app
+
+      a2enmod rewrite
+      a2ensite usuariosapp.conf
+      a2dissite 000-default.conf
+
+      # Reiniciamos apache
+      sudo systemctl restart apache2
+
+      # Configuramos config.php
+      sudo sed -i "s|'localhost'|'192.168.30.11'|g; s|'database_name_here'|'iawdb'|g; s|'username_here'|'iawuser'|g; s|'password_here'|'iawpass'|g" /var/www/html/iaw-practica-lamp/src/config.php
+
+
+### aprov/provision_mysql.sh
+
+      #!/bin/bash
+      # Actualizamos los repositorios e intalamos mariadb y github
+      apt-get update
+      apt-get upgrade -y
+      apt-get install -y mariadb-server git
+
+      # Clonamos el repositorio de git
+      git clone https://github.com/josejuansanchez/iaw-practica-lamp.git
+      sudo sed -i "s|bind-address\s*=.*|bind-address = 0.0.0.0|g" /etc/mysql/mariadb.conf.d/50-server.cnf
+      
+      # Reiniciamos mariadb
+      sudo systemctl restart mariadb
+      
+      # Creamos la base de datos y usuarios
+      mysql -u root -e"
+      CREATE DATABASE IF NOT EXISTS iawdb;
+      CREATE USER IF NOT EXISTS 'iawuser'@'192.168.30.%' IDENTIFIED BY 'iawpass';
+      GRANT SELECT, INSERT, DELETE, UPDATE ON iawdb.* TO 'iawuser'@'192.168.30.%';
+      FLUSH PRIVILEGES;
+      "
+      #Provisionamos la base de datos
+      mysql -u root iawdb < iaw-practica-lamp/db/database.sql
+
+      # Deshabilitamos la puerta de enlace para que el equipo no tenga salida a internet
+      sudo ip route del default
+
+      
+Damos permisos de ejecución a ambos scripts:
+
+    chmod 777 aprov/provision_apache.sh aprov/provision_mysql.sh
+
+## Apunte importante
+Por alguna razon utilizando la redirección de los .sh no me funcionaba pero si ponia los mismos comandos en el VagrantFile si(no comprendo porque no funciona).
+
+## 5. Despliegue automático de la infraestructura
+
+Lanzamos la creación de las dos máquinas y la ejecución de scripts:
+
+    vagrant up
+
+
+Este comando crea, inicia y configura automáticamente las dos máquinas virtuales y todo el software gracias a que ya estan aprovisionadas.
+
+---
+
+## 6. Acceso y comprobación del despliegue
+
+- Accede a la web en: [http://localhost:8080](http://localhost:8080)
+- Para conectarte por SSH a cada VM:
+
+      vagrant ssh web
+      vagrant ssh db
+
+Para detener las VMs:
+
+    vagrant halt
+
+Para eliminarlas:
+
+    vagrant destroy
