@@ -230,7 +230,7 @@ Damos permisos de ejecución a ambos scripts:
     chmod 777 aprov/provision_apache.sh aprov/provision_mysql.sh
 
 ## Apunte importante
-Por alguna razon utilizando la redirección de los .sh no me funcionaba pero si ponia los mismos comandos en el VagrantFile si(no comprendo porque no funciona).
+Por alguna razon utilizando la redirección de los .sh no me funcionaba pero si pongo los mismos comandos en el VagrantFile si, tiene que ser un problema de permisos casi seguro.
 
 ## 5. Despliegue automático de la infraestructura
 
@@ -258,3 +258,4 @@ Para detener las VMs:
 Para eliminarlas:
 
     vagrant destroy
+
